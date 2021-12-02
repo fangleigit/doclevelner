@@ -1,4 +1,4 @@
-from typing import Dict, List, Sequence, Iterable
+from typing import Dict, List, Iterable
 import itertools
 import logging
 
@@ -11,7 +11,6 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.dataset_readers.dataset_utils import to_bioul
 from allennlp.data.fields import TextField, SequenceLabelField, Field, MetadataField
 from allennlp.data.instance import Instance
-from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer
 from allennlp.data.tokenizers import Token
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -30,18 +29,6 @@ def _is_doc_divider(line: str) -> bool:
 
 @DatasetReader.register("conll2003-doc")
 class Conll2003DocDatasetReader(Conll2003DatasetReader):
-    def __init__(self,
-                 token_indexers: Dict[str, TokenIndexer] = None,
-                 tag_label: str = "ner",
-                 feature_labels: Sequence[str] = (),
-                 lazy: bool = False,
-                 coding_scheme: str = "IOB1",
-                 label_namespace: str = "labels") -> None:
-        Conll2003DatasetReader.__init__(
-            self, token_indexers, tag_label, feature_labels, lazy, coding_scheme, label_namespace)
-        self.el_tag_token_indexers = {'el_tags': SingleIdTokenIndexer()}
-        self.feature_labels.add('el')
-
     @overrides
     def _read(self, file_path: str) -> Iterable[Instance]:
         # if `file_path` is a URL, redirect to the cache
