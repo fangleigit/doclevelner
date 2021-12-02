@@ -224,7 +224,7 @@ def train_model(args):
 
     model = construct_model(vocab, args)
     batch_size = 64
-    if is_doc and is_elmo:
+    if is_doc and is_elmo and not is_sent_input:
         # cuda memory limit
         batch_size= 32
     iterator = DataIterator.from_params(params=Params({
