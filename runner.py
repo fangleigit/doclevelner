@@ -3,15 +3,15 @@ import json
 import os
 import random
 
+
 import numpy
 import torch
 from allennlp.common.params import Params
 from allennlp.common.util import (cleanup_global_logging, dump_metrics,
-                                  prepare_global_logging)
+                                  prepare_global_logging, import_submodules)
 from allennlp.data.dataset_readers import DatasetReader
 from allennlp.data.iterators.data_iterator import DataIterator
 from allennlp.data.vocabulary import Vocabulary
-from allennlp.models.crf_tagger import CrfTagger
 from allennlp.modules.seq2seq_encoders.pytorch_seq2seq_wrapper import \
     PytorchSeq2SeqWrapper
 from allennlp.modules.text_field_embedders.text_field_embedder import \
@@ -28,21 +28,30 @@ The only difference is that we have only one layer of bi-lstm, while there
 are two in the original ELMO paper. see line 150 and 159 of this file
 '''
 
+
 def setup_arguments():
-    parser = argparse.ArgumentParser(description='Training the (skip) NER Model')
+    parser = argparse.ArgumentParser(
+        description='Training the (skip) NER Model')
     parser.add_argument('-d', '--serialization-dir',
                         required=True,
                         type=str,
-                        help='directory in which to save the model and its logs')    
+                        help='directory in which to save the model and its logs')
 
-    parser.add_argument('--seed', default=10, type = int, help='The seed for reproducing the experiments.')
+    parser.add_argument('--seed', default=10, type=int,
+                        help='The seed for reproducing the experiments.')
 
-    parser.add_argument('--device', type=str,  default='0', help='cuda device ids')    
+    parser.add_argument('--device', type=str,  default='0',
+                        help='cuda device ids')
 
-    parser.add_argument('-e', '--is_elmo', action='store_true', required=False, help='embedding type, default is glove, if set, will use elmo')
+    parser.add_argument('-e', '--is_elmo', action='store_true', required=False,
+                        help='embedding type, default is glove, if set, will use elmo')
 
-    parser.add_argument('--data_type', type=str,  default='conll2003', help='datatype')    
-    
+    parser.add_argument('-l', '--is_doc', action='store_true',
+                        required=False, help='is document level')
+
+    parser.add_argument('--data_type', type=str,
+                        default='conll2003', help='datatype')
+
     parser_args = parser.parse_args()
 
     return parser_args
@@ -56,143 +65,171 @@ def setup_environment(serialization_dir, seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-def get_dataset_reader(is_elmo, data_type):
-    if data_type is None:
-        data_type = 'conll2003'
+
+def get_dataset_reader(is_elmo, data_type, is_doc):
+    if is_doc:
+        data_type = data_type + '-doc'
     jsonpara = {
-            "type": data_type,            
-            "coding_scheme": "BIOUL",
-            "token_indexers": {
-                "tokens": {
-                    "type": "single_id",
-                    "lowercase_tokens": True
-                },
-                "token_characters": {
-                    "type": "characters",
-                    "min_padding_length": 3
-                }
+        "type": data_type,
+        "coding_scheme": "BIOUL",
+        "token_indexers": {
+            "tokens": {
+                "type": "single_id",
+                "lowercase_tokens": True
+            },
+            "token_characters": {
+                "type": "characters",
+                "min_padding_length": 3
             }
         }
+    }
     # conll2003 need this
-    if data_type == 'conll2003':
+    if 'conll2003' in data_type:
         jsonpara["tag_label"] = "ner"
     if is_elmo:
-        jsonpara['token_indexers']['elmo']={
-        "type": "elmo_characters"
+        jsonpara['token_indexers']['elmo'] = {
+            "type": "elmo_characters"
         }
     return DatasetReader.from_params(params=Params(jsonpara))
 
 
-def read_data(is_elmo, data_type):
-    dataset_reader = get_dataset_reader(is_elmo=is_elmo, data_type=data_type)
+def read_data(is_elmo, data_type, is_doc=False):
+    dataset_reader = get_dataset_reader(
+        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
     train_data_path = "CoNLL2003/eng.train"
     validation_data_path = "CoNLL2003/eng.testa"
-    test_data_path = "CoNLL2003/eng.testb"    
+    test_data_path = "CoNLL2003/eng.testb"
 
     train_data = dataset_reader.read(train_data_path)
     validation_data = dataset_reader.read(validation_data_path)
-    test_data = dataset_reader.read(test_data_path)   
+    test_data = dataset_reader.read(test_data_path)
     return train_data, validation_data, test_data
 
-def construct_text_field_embedder(vocab, is_elmo):
+
+def construct_text_field_embedder(vocab, is_elmo, is_doc):
     jsonpara = {
         "token_embedders": {
-        "tokens": {
+            "tokens": {
+                "type": "embedding",
+                "embedding_dim": 50,
+                "pretrained_file": "https://allennlp.s3.amazonaws.com/datasets/glove/glove.6B.50d.txt.gz",
+                "trainable": True
+            },
+            "token_characters": {
+                "type": "character_encoding",
+                "embedding": {
+                    "embedding_dim": 16
+                },
+                "encoder": {
+                    "type": "cnn",
+                    "embedding_dim": 16,
+                    "num_filters": 128,
+                    "ngram_filter_sizes": [3],
+                    "conv_layer_activation": "relu"
+                }
+            }
+        },
+    }
+
+    if is_doc:
+        jsonpara['token_embedders']["el_tags"] = {
             "type": "embedding",
             "embedding_dim": 50,
-            "pretrained_file": "https://allennlp.s3.amazonaws.com/datasets/glove/glove.6B.50d.txt.gz",
             "trainable": True
-        },
-        "token_characters": {
-            "type": "character_encoding",
-            "embedding": {
-                "embedding_dim": 16
-            },
-            "encoder": {
-                "type": "cnn",
-                "embedding_dim": 16,
-                "num_filters": 128,
-                "ngram_filter_sizes": [3],
-                "conv_layer_activation": "relu"
-            }
-          }
-       },
-    }
+        }
+
     if is_elmo:
-        jsonpara['token_embedders']['elmo'] ={
+        jsonpara['token_embedders']['elmo'] = {
             "type": "elmo_token_embedder",
             "options_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json",
             "weight_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
             "do_layer_norm": False,
             "dropout": 0.0
         }
-    text_field_embedder = TextFieldEmbedder.from_params(vocab=vocab, params= Params(jsonpara))
+    text_field_embedder = TextFieldEmbedder.from_params(
+        vocab=vocab, params=Params(jsonpara))
     return text_field_embedder
+
 
 def construct_model(vocab, args):
     # is_skip = args.skip
     is_elmo = args.is_elmo
-    text_field_embedder = construct_text_field_embedder(vocab=vocab, is_elmo=is_elmo)
-    
+    is_doc = args.is_doc
+    text_field_embedder = construct_text_field_embedder(
+        vocab=vocab, is_elmo=is_elmo, is_doc=is_doc)
+
+    input_size = (50 + 128) if not is_elmo else (50 + 128 + 1024)
+    if is_doc:
+        input_size += 50
+
     encoder = PytorchSeq2SeqWrapper(
         torch.nn.LSTM(
-            input_size = (50 + 128) if not is_elmo else 1202 ,
+            input_size=input_size,
             num_layers=1,
-            hidden_size = 200,
+            hidden_size=200,
             bidirectional=True,
             batch_first=True
         )
-    )    
-        
+    )
+
     regularizer = RegularizerApplicator.from_params([[
         "scalar_parameters",
         {
             "type": "l2",
             "alpha": 0.1
         }
-        ]]) if is_elmo else None
+    ]]) if is_elmo else None
+
+    if is_doc:
+        from my_crf_tagger import MyCrfTagger as CrfTagger
+    else:
+        from allennlp.models.crf_tagger import CrfTagger
+
     model = CrfTagger(
         vocab=vocab,
-        text_field_embedder=text_field_embedder, 
+        text_field_embedder=text_field_embedder,
         encoder=encoder,
-        label_encoding="BIOUL", 
+        label_encoding="BIOUL",
         constrain_crf_decoding=True,
-        calculate_span_f1=True, 
-        dropout=0.5, 
+        calculate_span_f1=True,
+        dropout=0.5,
         include_start_end_transitions=False,
         regularizer=regularizer
-        )
-    
+    )
+
     return model
 
+
 def train_model(args):
-    seed = args.seed    
+    seed = args.seed
     device = args.device
     is_elmo = args.is_elmo
+    is_doc = args.is_doc
     data_type = args.data_type
     serialization_dir = args.serialization_dir
 
     setup_environment(serialization_dir, seed)
-    stdout_handler = prepare_global_logging(serialization_dir, True) 
+    stdout_handler = prepare_global_logging(serialization_dir, True)
 
-    train_data, validation_data, test_data = read_data(is_elmo=is_elmo, data_type=data_type)
+    train_data, validation_data, test_data = read_data(
+        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
     vocab = Vocabulary.from_instances(train_data + validation_data + test_data)
     vocab.save_to_files(os.path.join(serialization_dir, "vocabulary"))
 
     model = construct_model(vocab, args)
 
-    iterator = DataIterator.from_params(params= Params({
+    iterator = DataIterator.from_params(params=Params({
         "type": "basic",
         "batch_size": 64
     }))
     iterator.index_with(model.vocab)
-    
+
     trainer = Trainer.from_params(
-        model=model, 
-        serialization_dir=serialization_dir, 
+        model=model,
+        serialization_dir=serialization_dir,
         iterator=iterator,
-        train_data=train_data, 
-        validation_data=validation_data, 
+        train_data=train_data,
+        validation_data=validation_data,
         params=Params({
             "optimizer": {
                 "type": "adam",
@@ -205,44 +242,50 @@ def train_model(args):
             "patience": 25,
             "cuda_device": 0 if device != '-1' else -1
         }))
-    
+
     try:
         metrics = trainer.train()
     except:
         cleanup_global_logging(stdout_handler)
         raise
 
-    dump_metrics(os.path.join(serialization_dir, "metrics.json"), metrics, log=True)
+    dump_metrics(os.path.join(serialization_dir,
+                 "metrics.json"), metrics, log=True)
     cleanup_global_logging(stdout_handler)
+
 
 def test_model(args):
     is_elmo = args.is_elmo
     data_type = args.data_type
     serialization_dir = args.serialization_dir
-    # is_skip = args.skip
+    is_doc = args.is_doc
 
-    _, _, test_data = read_data(is_elmo=is_elmo, data_type=data_type)
-    vocab = Vocabulary.from_files(os.path.join(serialization_dir, "vocabulary"))
+    _, _, test_data = read_data(
+        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
+    vocab = Vocabulary.from_files(
+        os.path.join(serialization_dir, "vocabulary"))
     model = construct_model(vocab, args)
     model_state = torch.load(os.path.join(serialization_dir, "best.th"),
-                             map_location = torch.device('cpu'))
-    model.load_state_dict(model_state)    
+                             map_location=torch.device('cpu'))
+    model.load_state_dict(model_state)
     model.eval()
 
     model.get_metrics(reset=True)
     skip_tokens = []
     for _instance in test_data:
-        output = model.forward_on_instance(_instance)        
-    metrics = model.get_metrics() 
+        output = model.forward_on_instance(_instance)
+    metrics = model.get_metrics()
     with open(os.path.join(serialization_dir, 'test.metric.json'), 'w', encoding='utf8') as f:
         json.dump(metrics, f, indent=2)
-    print(json.dumps(metrics, indent=4))   
+    print(json.dumps(metrics, indent=4))
 
 
 if __name__ == "__main__":
-    args = setup_arguments()    
-    
+    args = setup_arguments()
+    print(args)
+
     if args.device != '-1':
         os.environ['CUDA_VISIBLE_DEVICES'] = args.device
+    import_submodules("datasetreader")
     train_model(args)
     test_model(args)
