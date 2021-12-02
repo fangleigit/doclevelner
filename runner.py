@@ -217,13 +217,19 @@ def train_model(args):
     vocab.save_to_files(os.path.join(serialization_dir, "vocabulary"))
 
     model = construct_model(vocab, args)
-
+    batch_size = 64
+    if is_doc and is_elmo:
+        # cuda memory limit
+        batch_size= 32
     iterator = DataIterator.from_params(params=Params({
         "type": "basic",
-        "batch_size": 64
+        "batch_size": batch_size
     }))
     iterator.index_with(model.vocab)
 
+    max_epoch = 75
+    if is_doc:
+        max_epoch += 100
     trainer = Trainer.from_params(
         model=model,
         serialization_dir=serialization_dir,
@@ -237,7 +243,7 @@ def train_model(args):
             },
             "validation_metric": "+f1-measure-overall",
             "num_serialized_models_to_keep": 3,
-            "num_epochs": 75,
+            "num_epochs": max_epoch,
             "grad_norm": 5.0,
             "patience": 25,
             "cuda_device": 0 if device != '-1' else -1
