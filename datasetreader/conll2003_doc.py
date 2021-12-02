@@ -44,22 +44,54 @@ class Conll2003DocDatasetReader(Conll2003DatasetReader):
             logger.info(
                 "Reading instances from lines in file at: %s", file_path)
 
-            # Group into alternative divider / sentence chunks.
-            for _is_divider, lines in itertools.groupby(data_file, _is_doc_divider):
-                # Ignore the divider chunks, so that `lines` corresponds to the words
-                # of a single sentence.
-                if not _is_divider:
-                    fields = [line.strip().split()
-                              for line in lines if not _is_line_divider(line)]
-                    # unzipping trick returns tuples, but our Fields need lists
-                    fields = [list(field) for field in zip(*fields)]
-                    tokens_, pos_tags, chunk_tags, ner_tags = fields
-                    # TextField requires ``Token`` objects
-                    tokens = [Token(token) for token in tokens_]
-                    entity_linked_tokens = [0] * len(tokens_)
-                    if ' '.join(tokens_) in entity_linked:
-                        entity_linked_tokens = entity_linked[' '.join(tokens_)]
-                    yield self.text_to_instance(tokens, pos_tags, chunk_tags, ner_tags, entity_linked_tokens)
+            if not self.is_sent_input:
+                # Group into alternative divider / sentence chunks.
+                for _is_divider, lines in itertools.groupby(data_file, _is_doc_divider):
+                    if not _is_divider:
+                        fields = [line.strip().split()
+                                  for line in lines if not _is_line_divider(line)]
+                        # unzipping trick returns tuples, but our Fields need lists
+                        fields = [list(field) for field in zip(*fields)]
+                        tokens_, pos_tags, chunk_tags, ner_tags = fields
+                        # TextField requires ``Token`` objects
+                        tokens = [Token(token) for token in tokens_]
+                        entity_linked_tokens = [0] * len(tokens_)
+                        if ' '.join(tokens_) in entity_linked:
+                            entity_linked_tokens = entity_linked[' '.join(
+                                tokens_)]
+                        yield self.text_to_instance(tokens, pos_tags, chunk_tags, ner_tags, entity_linked_tokens)
+            else:
+                for _is_divider, lines in itertools.groupby(data_file, _is_doc_divider):
+                    if not _is_divider:
+                        lines = list(lines)
+                        doc_fields = [line.strip().split()
+                                      for line in lines if not _is_line_divider(line)]
+                        doc_fields = [list(field)
+                                      for field in zip(*doc_fields)]
+                        doc_tokens_, _, _, _ = doc_fields
+
+                        entity_linked_tokens = [0] * len(doc_tokens_)
+                        if ' '.join(doc_tokens_) in entity_linked:
+                            entity_linked_tokens = entity_linked[' '.join(
+                                doc_tokens_)]
+
+                        doc_token_start_idx = 0
+
+                        for _is_line_divider_flag, sent_lines in itertools.groupby(lines, _is_line_divider):
+                            if not _is_line_divider_flag:
+                                fields = [sent_line.strip().split()
+                                          for sent_line in sent_lines]
+                                fields = [list(field)
+                                          for field in zip(*fields)]
+                                tokens_, pos_tags, chunk_tags, ner_tags = fields
+                                tokens = [Token(token) for token in tokens_]
+                                doc_token_end_idx = doc_token_start_idx + len(tokens_)
+                                sent_entity_linked_tokens = entity_linked_tokens[
+                                    doc_token_start_idx:doc_token_end_idx]
+                                doc_token_start_idx = doc_token_end_idx
+                                yield self.text_to_instance(tokens, pos_tags, chunk_tags, ner_tags, sent_entity_linked_tokens)
+                        assert doc_token_start_idx==len(doc_tokens_)
+                        
 
     def text_to_instance(self,  # type: ignore
                          tokens: List[Token],
