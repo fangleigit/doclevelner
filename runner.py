@@ -49,6 +49,9 @@ def setup_arguments():
     parser.add_argument('-l', '--is_doc', action='store_true',
                         required=False, help='is document level')
 
+    parser.add_argument('-s', '--sent_input', action='store_true',
+                        required=False, help='keep input as sentence level, only avaliable when is_doc is true')
+
     parser.add_argument('--data_type', type=str,
                         default='conll2003', help='datatype')
 
@@ -93,9 +96,11 @@ def get_dataset_reader(is_elmo, data_type, is_doc):
     return DatasetReader.from_params(params=Params(jsonpara))
 
 
-def read_data(is_elmo, data_type, is_doc=False):
+def read_data(is_elmo, data_type, is_doc, is_sent_input):
     dataset_reader = get_dataset_reader(
         is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
+    if is_doc and is_sent_input:
+        dataset_reader.is_sent_input = True
     train_data_path = "CoNLL2003/eng.train"
     validation_data_path = "CoNLL2003/eng.testa"
     test_data_path = "CoNLL2003/eng.testb"
@@ -205,6 +210,7 @@ def train_model(args):
     device = args.device
     is_elmo = args.is_elmo
     is_doc = args.is_doc
+    is_sent_input=args.sent_input
     data_type = args.data_type
     serialization_dir = args.serialization_dir
 
@@ -212,13 +218,13 @@ def train_model(args):
     stdout_handler = prepare_global_logging(serialization_dir, True)
 
     train_data, validation_data, test_data = read_data(
-        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
+        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc, is_sent_input = is_sent_input)
     vocab = Vocabulary.from_instances(train_data + validation_data + test_data)
     vocab.save_to_files(os.path.join(serialization_dir, "vocabulary"))
 
     model = construct_model(vocab, args)
     batch_size = 64
-    if is_doc and is_elmo:
+    if is_doc and is_elmo and not is_sent_input:
         # cuda memory limit
         batch_size= 32
     iterator = DataIterator.from_params(params=Params({
@@ -265,9 +271,10 @@ def test_model(args):
     data_type = args.data_type
     serialization_dir = args.serialization_dir
     is_doc = args.is_doc
+    is_sent_input=args.sent_input
 
     _, _, test_data = read_data(
-        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
+        is_elmo=is_elmo, data_type=data_type, is_doc=is_doc, is_sent_input=is_sent_input)
     vocab = Vocabulary.from_files(
         os.path.join(serialization_dir, "vocabulary"))
     model = construct_model(vocab, args)
