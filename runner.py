@@ -70,7 +70,7 @@ def setup_environment(serialization_dir, seed):
 
 
 def get_dataset_reader(is_elmo, data_type, is_doc):
-    if is_doc:
+    if is_doc and 'conll2003' in data_type:
         data_type = data_type + '-doc'
     jsonpara = {
         "type": data_type,
@@ -101,9 +101,11 @@ def read_data(is_elmo, data_type, is_doc, is_sent_input):
         is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
     if is_doc and is_sent_input:
         dataset_reader.is_sent_input = True
-    train_data_path = "CoNLL2003/eng.train"
-    validation_data_path = "CoNLL2003/eng.testa"
-    test_data_path = "CoNLL2003/eng.testb"
+    else:
+        dataset_reader.is_sent_input = False
+    train_data_path = "CoNLL2003/eng.train" if data_type == 'conll2003' else 'DocRED/train_annotated.json'
+    validation_data_path = "CoNLL2003/eng.testa" if data_type == 'conll2003' else 'DocRED/dev.json'
+    test_data_path = "CoNLL2003/eng.testb" if data_type == 'conll2003' else 'DocRED/test.json'
 
     train_data = dataset_reader.read(train_data_path)
     validation_data = dataset_reader.read(validation_data_path)
