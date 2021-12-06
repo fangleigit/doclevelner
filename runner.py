@@ -280,8 +280,7 @@ def test_model(args):
     vocab = Vocabulary.from_files(
         os.path.join(serialization_dir, "vocabulary"))
     model = construct_model(vocab, args)
-    model_state = torch.load(os.path.join(serialization_dir, "best.th"),
-                             map_location=torch.device('cpu'))
+    model_state = torch.load(os.path.join(serialization_dir, "best.th"))
     model.load_state_dict(model_state)
     model.eval()
 

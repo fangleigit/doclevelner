@@ -1,6 +1,7 @@
 import itertools
 import os
 import pickle
+import json
 
 from azure.ai.textanalytics import TextAnalyticsClient
 from azure.core.credentials import AzureKeyCredential
@@ -25,7 +26,7 @@ client = authenticate_client()
 whitelist = set(line.strip().lower() for line in open('PerLocOrg.txt'))
 
 
-def entity_linking():
+def entity_linking_conll2003():
     results = {}
     for file_path in os.listdir('CoNLL2003'):
         with open(os.path.join('CoNLL2003', file_path), "r") as data_file:
@@ -40,6 +41,21 @@ def entity_linking():
                     if res:
                         results[' '.join(tokens_)] = res
     with open('CoNLL2003/entitylinked.pkl', "wb") as ofile:
+        pickle.dump(results, ofile)
+
+
+def entity_linking_docred():
+    results = {}
+    for file_path in ['train_annotated.json', 'dev.json', 'test.json']:
+        print(file_path)
+        with open(os.path.join('DocRED', file_path), 'r') as file:
+            records = json.load(file)
+            for record in tqdm(records):
+                tokens = [item for sent in record['sents'] for item in sent]
+                res = entity_linking_on_tokens(tokens)
+                if res:
+                    results[' '.join(tokens)] = res
+    with open('DocRED/entitylinked.pkl', "wb") as ofile:
         pickle.dump(results, ofile)
 
 
@@ -62,7 +78,7 @@ def entity_linking_on_tokens(tokens):
         result = client.recognize_linked_entities(documents=[content])[0]
         for entity in result.entities:
             if entity.name.lower() not in whitelist:
-                continue
+               continue
             # print("Name: ", entity.name)
             for match in entity.matches:
                 # print("Text:", match.text)
@@ -86,4 +102,5 @@ def entity_linking_on_tokens(tokens):
         return None
 
 
-entity_linking()
+# entity_linking_conll2003()
+# entity_linking_docred()
