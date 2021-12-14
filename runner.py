@@ -99,10 +99,11 @@ def get_dataset_reader(is_elmo, data_type, is_doc):
 def read_data(is_elmo, data_type, is_doc, is_sent_input):
     dataset_reader = get_dataset_reader(
         is_elmo=is_elmo, data_type=data_type, is_doc=is_doc)
-    if is_doc and is_sent_input:
+    if data_type == 'conll2003' and is_doc and is_sent_input:
         dataset_reader.is_sent_input = True
     else:
-        dataset_reader.is_sent_input = False
+        dataset_reader.is_sent_input = is_sent_input
+
     train_data_path = "CoNLL2003/eng.train" if data_type == 'conll2003' else 'DocRED/train_annotated.json'
     validation_data_path = "CoNLL2003/eng.testa" if data_type == 'conll2003' else 'DocRED/dev.json'
     test_data_path = "CoNLL2003/eng.testb" if data_type == 'conll2003' else 'DocRED/test.json'
